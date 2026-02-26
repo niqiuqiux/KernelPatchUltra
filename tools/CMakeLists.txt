@@ -17,7 +17,6 @@ set(SOURCES
     kpm.c
     common.c
     bootimg.c
-    btf.c
 )
 
 add_executable(

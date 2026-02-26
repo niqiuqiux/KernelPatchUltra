@@ -24,7 +24,6 @@
 #include "symbol.h"
 #include "kpm.h"
 #include "lib/sha/sha256.h"
-#include "btf.h"
 
 void read_kernel_file(const char *path, kernel_file_t *kernel_file)
 {
