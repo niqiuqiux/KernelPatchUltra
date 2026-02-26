@@ -1,0 +1,86 @@
+
+#define ALIGN(x, a) (((x) + (a) - 1) & ~((a) - 1))
+#define PAGE_SIZE_DEFAULT 4096
+
+#define LZ4_MAGIC 0x184c2102
+#define LZ4_BLOCK_SIZE 0x800000
+#define LZ4HC_CLEVEL 12
+#define AVB_FOOTER_SIZE 64
+
+struct boot_img_hdr {
+    uint8_t magic[8];           // "ANDROID!"
+    uint32_t kernel_size;
+    uint32_t kernel_addr;     //when it come to V3 ,it should be ramdisk_size
+    uint32_t ramdisk_size;
+    uint32_t ramdisk_addr;
+    uint32_t second_size;
+    uint32_t second_addr;
+    uint32_t tags_addr;
+    uint32_t page_size;         // 4096
+    uint32_t unused[2];
+    uint8_t name[16];
+    uint8_t cmdline[512];
+    uint32_t id[8];
+	uint8_t extra_cmdline[1024];     // command
+
+    // v2 
+    uint32_t recovery_dtbo_size;     
+    uint64_t recovery_dtbo_offset;   
+         
+    
+    // v3 
+    uint32_t dtb_size;               
+    uint64_t dtb_addr;               
+};
+struct kernel_hdr {
+	uint32_t code0;      // Executable code
+    uint32_t code1;      // Executable code
+    uint64_t text_offset; // Image load offset, little endian
+    uint64_t image_size;  // Effective Image size, little endian
+    uint64_t flags;       // kernel flags, little endian
+    uint64_t res2;        // reserved
+    uint64_t res3;        // reserved
+    uint64_t res4;        // reserved
+    uint32_t magic;       // Magic number, "ARM\x64"
+    uint32_t res5;        // reserved
+	
+};
+
+typedef struct {
+     uint8_t magic[8];
+} compress_head;
+
+#define DTB_MAGIC "\xd0\x0d\xfe\xed"
+
+struct fdt_header {
+    uint32_t magic;
+    uint32_t totalsize;
+    uint32_t off_dt_struct;
+    uint32_t off_dt_strings;
+    uint32_t off_mem_rsvmap;
+    uint32_t version;
+    uint32_t last_comp_version;
+    uint32_t boot_cpuid_phys;
+    uint32_t size_dt_strings;
+    uint32_t size_dt_struct;
+};
+struct avb_footer {
+    uint32_t reverse[16];
+    /* 0x00 */ uint32_t magic;              /* ("AVBf") */
+    /* 0x04 */ uint32_t version;            /*  0x00000001 */
+    /* 0x08 */ uint64_t reserved1;          /*  0x0000000000000000 */
+    /* 0x10 */ uint32_t data_size1;         /*  0x00022FC000000000 */
+    /* 0x10 */ uint32_t data_size_1;         /*  0x00022FC000000000 */
+    /* 0x16 */ uint32_t data_size2;         /* same as data_size1 */
+    /* 0x16 */ uint32_t data_size_2;         /* same as data_size1 */
+    /* 0x20 */ uint64_t unknown_field;      /* 0x0000000000000940 */
+    /* 0x30 */ uint8_t  padding[24];        /*  */
+} __attribute__((packed));
+
+int repack_bootimg(const char *orig_boot_path, 
+                        const char *new_kernel_path, 
+                        const char *out_boot_path);
+int extract_kernel(const char *bootimg_path);
+
+int detect_compress_method(compress_head data);
+int cacluate_sha1(const char *file);

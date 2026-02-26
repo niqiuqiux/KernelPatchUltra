@@ -23,7 +23,7 @@
 #include "preset.h"
 #include "symbol.h"
 #include "kpm.h"
-#include "sha256.h"
+#include "lib/sha/sha256.h"
 #include "btf.h"
 
 void read_kernel_file(const char *path, kernel_file_t *kernel_file)
@@ -216,7 +216,33 @@ int parse_image_patch_info(const char *kimg, int kimg_len, patched_kimg_t *pimg)
     if (!pimg->banner) tools_loge_exit("can't find linux banner\n");
 
     // patched or new
-    preset_t *old_preset = get_preset(kimg, kimg_len);
+    preset_t *old_preset = NULL;
+    const char *search_ptr = kimg;
+    int search_len = kimg_len;
+    int32_t saved_kimg_len = 0;
+    int align_kimg_len = 0;
+
+    while (search_len > 0) {
+        old_preset = get_preset(search_ptr, search_len);
+        if (!old_preset) break;
+
+        saved_kimg_len = old_preset->setup.kimg_size;
+        if (is_be() ^ kinfo->is_be) saved_kimg_len = i32swp(saved_kimg_len);
+
+        align_kimg_len = (char *)old_preset - kimg;
+        if (align_kimg_len == (int)align_ceil(saved_kimg_len, SZ_4K)) {
+            break;
+        }
+
+        tools_logw("found magic string at 0x%x but saved kernel image size mismatch, ignoring (false positive?)\n",
+                   align_kimg_len);
+
+        // Search next
+        search_ptr = (char *)old_preset + 1;
+        search_len = kimg_len - (search_ptr - kimg);
+        old_preset = NULL;
+    }
+
     pimg->preset = old_preset;
 
     if (!old_preset) {
@@ -226,11 +252,6 @@ int parse_image_patch_info(const char *kimg, int kimg_len, patched_kimg_t *pimg)
     }
 
     tools_logi("patched kernel image ...\n");
-    int32_t saved_kimg_len = old_preset->setup.kimg_size;
-    if (is_be() ^ kinfo->is_be) saved_kimg_len = i32swp(saved_kimg_len);
-
-    int align_kimg_len = (char *)old_preset - kimg;
-    if (align_kimg_len != (int)align_ceil(saved_kimg_len, SZ_4K)) tools_loge_exit("saved kernel image size error\n");
     pimg->ori_kimg_len = saved_kimg_len;
 
     memcpy((char *)kimg, old_preset->setup.header_backup, sizeof(old_preset->setup.header_backup));
@@ -338,27 +359,42 @@ static void extra_append(char *kimg, const void *data, int len, int *offset)
     *offset += len;
 }
 
-static void disable_pi_map(char *img, int32_t imglen)
+static void hexstr_to_bytes(const char *hexstr, size_t out_len, unsigned char *out)
 {
-    
-    const unsigned char pattern[] = {
-        0xE6, 0x03, 0x16, 0xAA,
-        0xE7, 0x03, 0x1F, 0x2A,
-        0x34, 0x11, 0x88, 0x9A
-    };
-    const size_t pattern_len = sizeof(pattern);
-
-    const unsigned char replace[] = {
-        0xE6, 0x03, 0x16, 0xAA,
-        0xE7, 0x03, 0x1F, 0x2A,
-        0xF4, 0x03, 0x09, 0xAA
-    };
-
-    unsigned char *p = memmem(img, imglen, pattern, pattern_len);
-    if (p) {
-        memcpy(p, replace, pattern_len);
+    for (size_t i = 0; i < out_len; i++) {
+        char tmp[3] = { hexstr[i * 2], hexstr[i * 2 + 1], 0 };
+        out[i] = (unsigned char)strtoul(tmp, NULL, 16);
     }
+}
 
+static void hex_patch(char *img, size_t imglen,
+                      const char *pattern_hex,
+                      const char *replace_hex)
+{
+    size_t patternlen = strlen(pattern_hex) / 2;
+    size_t replacelen = strlen(replace_hex) / 2;
+
+
+    unsigned char pattern[32];
+    unsigned char replace[32];
+
+    hexstr_to_bytes(pattern_hex, patternlen, pattern);
+    hexstr_to_bytes(replace_hex, replacelen, replace);
+
+    unsigned char *p = memmem(img, imglen, pattern, patternlen);
+    if (p) {
+        memcpy(p, replace, replacelen);
+    }
+}
+
+static void disable_pi_map(char *img, size_t imglen)
+{
+    hex_patch(
+        img,
+        imglen,
+        "E60316AAE7031F2A3411889A",
+        "E60316AAE7031F2AF40309AA"
+    );
 }
 
 
@@ -533,11 +569,9 @@ int patch_update_img(const char *kimg_path, const char *kpimg_path, const char *
     setup->map_max_size = map_max_size;
     tools_logi("map_start: 0x%x, max_size: 0x%x\n", map_start, map_max_size);
 
-    // 将kallsym_kimg中被NOP修改的部分同步到输出文件
-    // select_map_area在max_size*2范围内修改了PAC指令，需要同步这些修改
     int tcp_init_sock_offset = get_symbol_offset_exit(&kallsym, kallsym_kimg, "tcp_init_sock");
     int sync_start = tcp_init_sock_offset;
-    int sync_size = map_max_size * 2;  // 覆盖可能被修改的最大范围
+    int sync_size = map_max_size * 2;
     if (sync_start + sync_size > ori_kimg_len) {
         sync_size = ori_kimg_len - sync_start;
     }

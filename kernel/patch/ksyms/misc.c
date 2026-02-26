@@ -257,15 +257,22 @@ void _linux_kernel_pid_sym_match(const char *name, unsigned long addr)
 // kernel/stop_machine.c
 #include <linux/stop_machine.h>
 
-bool kvar_def(stop_machine_initialized) = 0;
-const struct cpumask *kvar_def(cpu_online_mask) = 0;
 int kfunc_def(stop_machine)(int (*fn)(void *), void *data, const struct cpumask *cpus) = 0;
 
 static void _linux_kernel_stop_machine_sym_match(const char *name, unsigned long addr)
 {
-    // kvar_match(stop_machine_initialized, name, addr);
-    // kvar_match(cpu_online_mask, name, addr);
     kfunc_match(stop_machine, name, addr);
+}
+
+const struct cpumask *kvar(cpu_online_mask) = 0;
+const struct cpumask *kvar(__cpu_online_mask) = 0;
+const unsigned int kvar_def(nr_cpu_ids) = 0;
+
+static void _linux_cpumask_sym_match(const char *name, unsigned long addr)
+{
+    kvar_match(cpu_online_mask, name, addr);
+    kvar_match(__cpu_online_mask, name, addr);
+    kvar_match(nr_cpu_ids, name, addr);
 }
 
 // mm/util.c
@@ -748,16 +755,16 @@ void kfunc_def(__local_bh_enable_ip)(unsigned long ip, unsigned int cnt) = 0;
 void kfunc_def(_local_bh_enable)(void) = 0;
 bool kfunc_def(local_bh_blocked)(void) = 0;
 
-void kfunc_def(call_rcu)(struct rcu_head *head, rcu_callback_t func);
-void kfunc_def(rcu_barrier_tasks)(void);
-void kfunc_def(rcu_barrier_tasks_rude)(void);
-void kfunc_def(synchronize_rcu)(void);
-unsigned long kfunc_def(get_completed_synchronize_rcu)(void);
-void kfunc_def(get_completed_synchronize_rcu_full)(struct rcu_gp_oldstate *rgosp);
+void kfunc_def(call_rcu)(struct rcu_head *head, rcu_callback_t func) = 0;
+void kfunc_def(rcu_barrier_tasks)(void) = 0;
+void kfunc_def(rcu_barrier_tasks_rude)(void) = 0;
+void kfunc_def(synchronize_rcu)(void) = 0;
+unsigned long kfunc_def(get_completed_synchronize_rcu)(void) = 0;
+void kfunc_def(get_completed_synchronize_rcu_full)(struct rcu_gp_oldstate *rgosp) = 0;
 
-void kfunc_def(__rcu_read_lock)(void);
-void kfunc_def(__rcu_read_unlock)(void);
-void kfunc_def(rcu_read_unlock_strict)(void);
+void kfunc_def(__rcu_read_lock)(void) = 0;
+void kfunc_def(__rcu_read_unlock)(void) = 0;
+void kfunc_def(rcu_read_unlock_strict)(void) = 0;
 
 // linux/rcupdate
 void kfunc_def(rcu_init)(void) = 0;
@@ -829,9 +836,9 @@ static void _linux_rcu_symbol_init(const char *name, unsigned long addr)
     // kfunc_match(exit_tasks_rcu_finish, name, addr);
 }
 
-void kfunc_def(mmput)(struct mm_struct *);
-void kfunc_def(mmput_async)(struct mm_struct *);
-struct mm_struct *kfunc_def(get_task_mm)(struct task_struct *task);
+void kfunc_def(mmput)(struct mm_struct *) = 0;
+void kfunc_def(mmput_async)(struct mm_struct *) = 0;
+struct mm_struct *kfunc_def(get_task_mm)(struct task_struct *task) = 0;
 
 static void _linux_sched_mm_init(const char *name, unsigned long addr)
 {
@@ -845,6 +852,7 @@ static int _linux_misc_symbol_init(void *data, const char *name, struct module *
     _linux_kernel_cred_sym_match(name, addr);
     _linux_kernel_pid_sym_match(name, addr);
     _linux_kernel_stop_machine_sym_match(name, addr);
+    _linux_cpumask_sym_match(name, addr);
     _linux_mm_utils_sym_match(name, addr);
     _linux_mm_vmalloc_sym_match(name, addr);
     _linux_fs_sym_match(name, addr);

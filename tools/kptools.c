@@ -16,7 +16,7 @@
 #include <errno.h>
 
 #include "../version"
-
+#include "bootimg.h"
 #include "preset.h"
 #include "image.h"
 #include "order.h"
@@ -47,7 +47,7 @@ void print_usage(char **argv)
         "  -l, --list                       Print all patch informations of kernel image if (-i) specified.\n"
         "                                   Print extra item informations if (-M) specified.\n"
         "                                   Print KernelPatch image informations if (-k) specified.\n"
-
+        "Unpack kernel: unpack <boot.img>\n  Repack Kernel: repack <boot.img>\n"
         "Options:\n"
         "  -i, --image PATH                 Kernel image path.\n"
         "  -k, --kpimg PATH                 KernelPatch image path.\n"
@@ -74,7 +74,23 @@ int main(int argc, char *argv[])
 {
     version = (MAJOR << 16) + (MINOR << 8) + PATCH;
     program_name = argv[0];
-
+    if (argc > 2){
+        
+        if (strcmp(argv[1], "unpack") == 0) {
+            set_log_enable(true);
+            return extract_kernel(argv[2]);
+        }
+        if (strcmp(argv[1], "unpacknolog") == 0) {
+            return extract_kernel(argv[2]);
+        } 
+        if (strcmp(argv[1], "repack") == 0) {
+            set_log_enable(true);
+            return repack_bootimg(argv[2], "kernel", "new-boot.img");
+        } 
+        if (strcmp(argv[1], "sha1") == 0) {
+            return cacluate_sha1(argv[2]);
+        }
+    }
     struct option longopts[] = { { "help", no_argument, NULL, 'h' },
                                  { "version", no_argument, NULL, 'v' },
 

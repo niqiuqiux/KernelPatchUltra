@@ -190,7 +190,9 @@ jobs:
             -DANDROID_PLATFORM=android-33 \
             -DANDROID_ABI=arm64-v8a ../..
           cmake --build .
+          ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip kptools
           mv kptools kptools-android
+
 
       - name: Release
         uses: ncipollo/release-action@v1.14.0
@@ -267,14 +269,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Get commit SHA
-        shell: pwsh
-        id: get_commit
-        run: |
-          $COMMIT_SHA = git rev-parse HEAD
-          Write-Output "Commit SHA: $COMMIT_SHA"
-          "COMMIT_SHA=$COMMIT_SHA" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "COMMIT_SHA=$COMMIT_SHA"
+
       - name: Generate version
         shell: pwsh
         run: |
@@ -292,38 +287,36 @@ jobs:
           path-type: inherit
           install: >-
             msys/make
+            msys/cmake
             msys/gcc
             msys/zlib-devel
+
       - name: Copyfile
         shell: pwsh
         run: |
           cp .\kernel\include\preset.h .\tools\
           cd tools
+
       - name: build
-        shell: cmd
+        shell: pwsh
         run: |
           cd tools
-          msys2 -c 'make'
-      - name: Showinfo
-        shell: cmd
-        run: |
-          ls D:\a\_temp\
+          msys2 -c 'cmake . && make'
 
       - name: Copyfile2
+        shell: cmd
+        run: |
+          mkdir win
+          copy tools\kptools.exe kptools.exe
+          copy kptools.exe win\
+          msys2 -c "ldd kptools.exe | grep '/usr/bin/msys-' | sed -E 's/^.*=> ([^ ]+).*$/\1/' | xargs -I{} cp -v {} win/"
+
+      - name: package
         shell: pwsh
         run: |
-          mkdir .\win
-          cp .\tools\kptools.exe .\win\kptools-msys2.exe
-          cp D:\a\_temp\msys64\usr\bin\msys-2.0.dll .\win
-          cp D:\a\_temp\msys64\usr\bin\msys-z.dll .\win
-          7z a kptools-msys2-win .\win 
-      - name: Get branch name
-        shell: pwsh
-        id: get_branch
-        run: |
-          $BRANCH = "${{ github.ref_name }}"
-          Write-Output "Branch: $BRANCH"
-          "BRANCH=$BRANCH" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          7z a kptools-msys2-win.7z win
+          dir .
+
       - name: Release
         uses: ncipollo/release-action@v1.12.0
         with:

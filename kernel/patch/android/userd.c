@@ -33,7 +33,7 @@
 #include <uapi/scdefs.h>
 #include <uapi/linux/stat.h>
 
-#define ORIGIN_RC_FILE "/system/etc/init/atrace.rc"
+
 #define REPLACE_RC_FILE "/dev/user_init.rc"
 
 #define ADB_FLODER "/data/adb/"
@@ -43,29 +43,42 @@
 #define AP_LOG_DIR AP_DIR "log/"
 #define AP_MAGISKPOLICY_PATH AP_BIN_DIR "magiskpolicy"
 #define MAGISK_SCTX "u:r:magisk:s0"
-#define USER_INIT_SH_PATH "/dev/user_init.sh"
+#define APD_PATH "/data/adb/apd"
+#define MAGISK_POLICY_PATH "/data/adb/ap/bin/magiskpolicy"
+
 
 #include "gen/user_init.c"
+
+static const char ORIGIN_RC_FILES[][64] = {
+    "/system/etc/init/hw/init.rc",
+    "/init.rc",
+    "/vendor/etc/init/hw/init.target.rc",
+    ""
+};
 
 static const char user_rc_data[] = { //
     "\n"
     "on early-init\n"
-    "    exec -- " SUPERCMD " su exec " USER_INIT_SH_PATH " %s early-init\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " MAGISK_POLICY_PATH " --magisk --live\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " APD_PATH " -s %s early-init\n"
     "on init\n"
-    "    exec -- " SUPERCMD " su exec " USER_INIT_SH_PATH " %s init\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " MAGISK_POLICY_PATH " --magisk --live\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " APD_PATH " -s %s init\n"
     "on late-init\n"
-    "    exec -- " SUPERCMD " su exec " USER_INIT_SH_PATH " %s late-init\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " MAGISK_POLICY_PATH " --magisk --live\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " APD_PATH " -s %s late-init\n"
     "on post-fs-data\n"
-    "    exec -- " SUPERCMD " su exec " USER_INIT_SH_PATH " %s post-fs-data\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " MAGISK_POLICY_PATH " --magisk --live\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " APD_PATH " -s %s post-fs-data\n"
     "on nonencrypted\n"
-    "    exec -- " SUPERCMD " su exec " USER_INIT_SH_PATH " %s services\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " APD_PATH " -s %s services\n"
     "on property:vold.decrypt=trigger_restart_framework\n"
-    "    exec -- " SUPERCMD " su exec " USER_INIT_SH_PATH " %s services\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " APD_PATH " -s %s services\n"
     "on property:sys.boot_completed=1\n"
-    "    exec -- " SUPERCMD " su exec " USER_INIT_SH_PATH " %s boot-completed\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " APD_PATH " -s %s boot-completed\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " exec " APD_PATH " uid-listener &\n"
     "    rm " REPLACE_RC_FILE "\n"
-    "    rm " USER_INIT_SH_PATH "\n"
-    "    exec -- " SUPERCMD " su -c \"mv -f " DEV_LOG_DIR " " AP_LOG_DIR "\"\n"
+    "    exec -- " SUPERCMD " su -Z " MAGISK_SCTX " -c \"mv -f " DEV_LOG_DIR " " AP_LOG_DIR "\"\n"
     ""
 };
 
@@ -118,7 +131,7 @@ out:
 static void pre_user_exec_init()
 {
     log_boot("event: %s\n", EXTRA_EVENT_PRE_EXEC_INIT);
-    kernel_write_file(USER_INIT_SH_PATH, user_init, sizeof(user_init), 0700);
+
 }
 
 static void pre_init_second_stage()
@@ -256,23 +269,44 @@ static void after_execveat(hook_fargs5_t *args, void *udata)
 // SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags, umode_t, mode)
 static void before_openat(hook_fargs4_t *args, void *udata)
 {
+    
     // cp len
     args->local.data0 = 0;
     // cp ptr
     args->local.data1 = 0;
     // unhook flag
     args->local.data2 = 0;
-
+    /* Meaning of args->local.data3 values:
+     * 0 = no match
+     * 1 = ORIGIN_RC_FILES[0]
+     * 2 = ORIGIN_RC_FILES[1]
+     */
+    args->local.data3 = 0;
     static int replaced = 0;
     if (replaced) return;
 
     const char __user *filename = (typeof(filename))syscall_argn(args, 1);
-    char buf[32];
+    char buf[64];
     long rc = compat_strncpy_from_user(buf, filename, sizeof(buf));
     if (rc <= 0) return;
-    if (strcmp(ORIGIN_RC_FILE, buf)) return;
+
+    int file_count = sizeof(ORIGIN_RC_FILES) / sizeof(ORIGIN_RC_FILES[0]);
+    for (int i = 0; i < file_count; i++) {
+        if (ORIGIN_RC_FILES[i][0] == '\0') break;
+        
+        if (!strcmp(buf, ORIGIN_RC_FILES[i])) {
+            args->local.data3 = i + 1;
+            log_boot("matched rc file: %s\n", ORIGIN_RC_FILES[i]);
+            break;
+        }
+    }
+
+    if (args->local.data3 == 0) {
+        return;
+    }
 
     replaced = 1;
+    const char *origin_rc = ORIGIN_RC_FILES[args->local.data3 - 1];
 
     loff_t ori_len = 0;
     struct file *newfp = filp_open(REPLACE_RC_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0600);
@@ -282,7 +316,7 @@ static void before_openat(hook_fargs4_t *args, void *udata)
     }
 
     loff_t off = 0;
-    const char *ori_rc_data = kernel_read_file(ORIGIN_RC_FILE, &ori_len);
+    const char *ori_rc_data = kernel_read_file(origin_rc, &ori_len);
     if (!ori_rc_data) goto out;
     kernel_write(newfp, ori_rc_data, ori_len, &off);
     if (off != ori_len) {
@@ -323,15 +357,22 @@ out:
 
 static void after_openat(hook_fargs4_t *args, void *udata)
 {
-    if (args->local.data0) {
-        compat_copy_to_user((void *)args->local.data1, ORIGIN_RC_FILE, sizeof(ORIGIN_RC_FILE));
+ 
+    if (args->local.data0 && args->local.data3 > 0) {
+        
+        const char *origin_rc = ORIGIN_RC_FILES[args->local.data3 - 1];
+        compat_copy_to_user(
+            (void *)args->local.data1,
+            origin_rc,
+            sizeof(ORIGIN_RC_FILES[args->local.data3 - 1]));
         log_boot("restore rc file: %x\n", args->local.data0);
     }
+
+    
     if (args->local.data2) {
         unhook_syscalln(__NR_openat, before_openat, after_openat);
     }
 }
-
 #define EV_KEY 0x01
 #define KEY_VOLUMEDOWN 114
 
