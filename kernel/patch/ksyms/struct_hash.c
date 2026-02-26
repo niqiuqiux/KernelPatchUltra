@@ -25,7 +25,7 @@
 // };
 
 /* 哈希表：使用 10 位，即 1024 个桶 */
-#define STRUCT_MEMBER_HASH_BITS 20
+#define STRUCT_MEMBER_HASH_BITS 10
 DEFINE_HASHTABLE(struct_member_hash, STRUCT_MEMBER_HASH_BITS);
 static bool struct_member_hash_initialized = false;
 static DEFINE_SPINLOCK(struct_member_lock);
@@ -140,6 +140,21 @@ int add_member_to_hash(const char *struct_name, const char *member_name, uint32_
         return -1;
     }
 
+    /* 先在锁外预分配内存，避免在 spinlock 中调用可能睡眠的 vmalloc */
+    struct struct_member_entry *new_entry = vmalloc(sizeof(*new_entry));
+    if (!new_entry) {
+        logke("Failed to allocate struct_member_entry\n");
+        return -1;
+    }
+
+    memset(new_entry, 0, sizeof(*new_entry));
+    strncpy(new_entry->struct_name, struct_name, sizeof(new_entry->struct_name) - 1);
+    new_entry->struct_name[sizeof(new_entry->struct_name) - 1] = '\0';
+    strncpy(new_entry->member_name, member_name, sizeof(new_entry->member_name) - 1);
+    new_entry->member_name[sizeof(new_entry->member_name) - 1] = '\0';
+    new_entry->offset = offset;
+    new_entry->type_id = type_id;
+
     spin_lock_irqsave(&struct_member_lock, flags);
 
     /* 确保哈希表初始化 */
@@ -148,32 +163,17 @@ int add_member_to_hash(const char *struct_name, const char *member_name, uint32_
     /* 检查是否已存在 */
     entry = __find_member_entry_locked(struct_name, member_name);
     if (entry) {
-        /* 更新现有条目 */
+        /* 更新现有条目，释放预分配的内存 */
         entry->offset = offset;
         entry->type_id = type_id;
         spin_unlock_irqrestore(&struct_member_lock, flags);
+        vfree(new_entry);
         return 0;
     }
 
-    /* 分配新条目 */
-    entry = vmalloc(sizeof(*entry));
-    if (!entry) {
-        logke("Failed to allocate struct_member_entry\n");
-        spin_unlock_irqrestore(&struct_member_lock, flags);
-        return -1;
-    }
-
-    memset(entry, 0, sizeof(*entry));
-    strncpy(entry->struct_name, struct_name, sizeof(entry->struct_name) - 1);
-    entry->struct_name[sizeof(entry->struct_name) - 1] = '\0';
-    strncpy(entry->member_name, member_name, sizeof(entry->member_name) - 1);
-    entry->member_name[sizeof(entry->member_name) - 1] = '\0';
-    entry->offset = offset;
-    entry->type_id = type_id;
-
-    /* 添加到哈希表 */
+    /* 添加预分配的条目到哈希表 */
     uint32_t key = member_hash_key(struct_name, member_name);
-    hash_add(struct_member_hash, &entry->node, key);
+    hash_add(struct_member_hash, &new_entry->node, key);
 
     spin_unlock_irqrestore(&struct_member_lock, flags);
 

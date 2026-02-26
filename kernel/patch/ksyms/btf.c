@@ -765,9 +765,9 @@ static bool resolve_struct_or_union_type_id(const btf_t *btf, uint32_t type_id, 
  
          //members = kcalloc(vlen_cap, sizeof(*members), GFP_KERNEL);
         members = vmalloc(vlen_cap * sizeof(*members));
-         lib_memset(members, 0, vlen_cap * sizeof(*members));
          if (!members)
              return -1;
+         lib_memset(members, 0, vlen_cap * sizeof(*members));
  
          count = btf_get_struct_members(btf, struct_type_id, members, vlen_cap);
          if (count <= 0) {
@@ -806,9 +806,9 @@ static bool resolve_struct_or_union_type_id(const btf_t *btf, uint32_t type_id, 
  
          //btf_member_info_t *nested = kcalloc(nested_cap, sizeof(*nested), GFP_KERNEL);
         btf_member_info_t *nested = vmalloc(nested_cap * sizeof(*nested));
-         lib_memset(nested, 0, nested_cap * sizeof(*nested));
          if (!nested)
              continue;
+         lib_memset(nested, 0, nested_cap * sizeof(*nested));
  
          int32_t nested_cnt = btf_get_struct_members(btf, nested_type_id, nested, nested_cap);
          if (nested_cnt > 0) {
