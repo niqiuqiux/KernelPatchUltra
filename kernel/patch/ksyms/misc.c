@@ -330,8 +330,8 @@ static void _linux_mm_utils_sym_match(const char *name, unsigned long addr)
     // kfunc_match(__page_mapcount, name, addr);
     // kfunc_match(vm_memory_committed, name, addr);
     // kfunc_match(get_cmdline, name, addr);
-    // kfunc_match(__kmalloc, name, addr);
-    // kfunc_match(kmalloc, name, addr);
+    kfunc_match(__kmalloc, name, addr);
+    kfunc_match(kmalloc, name, addr);
     kfunc_match(kfree, name, addr);
 }
 
