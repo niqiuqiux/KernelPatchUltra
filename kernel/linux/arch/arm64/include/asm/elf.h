@@ -9,6 +9,7 @@
 #include <asm/ptrace.h>
 #include <uapi/asm-generic/errno.h>
 
+//https://ftp.iij.ad.jp/pub/NetBSD/NetBSD-release-11/src/external/gpl3/binutils/dist/elfcpp/aarch64.h
 /*
  * AArch64 static relocation types.
  */
@@ -172,6 +173,7 @@ typedef struct user_fpsimd_state elf_fpregset_t;
 struct linux_binprm;
 extern int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp);
 
+#define CONFIG_COMPAT
 /* 1GB of VA */
 #ifdef CONFIG_COMPAT
 #define STACK_RND_MASK (test_thread_flag(TIF_32BIT) ? 0x7ff >> (PAGE_SHIFT - 12) : 0x3ffff >> (PAGE_SHIFT - 12))
@@ -207,6 +209,7 @@ typedef compat_elf_greg_t compat_elf_gregset_t[COMPAT_ELF_NGREG];
  * arch/arm/.
  */
 #define COMPAT_SET_PERSONALITY(ex) ({ set_thread_flag(TIF_32BIT); })
+#define CONFIG_COMPAT_VDSO
 #ifdef CONFIG_COMPAT_VDSO
 #define COMPAT_ARCH_DLINFO                                                  \
     do {                                                                    \
